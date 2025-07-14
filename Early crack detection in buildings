@@ -1,0 +1,82 @@
+import RPi.GPIO as GPIO
+import time
+import serial
+import csv
+from datetime import datetime
+
+# GPIO Mode
+GPIO.setmode(GPIO.BCM)
+
+# Ultrasonic Sensor Pins
+TRIG = 23
+ECHO = 24
+GPIO.setup(TRIG, GPIO.OUT)
+GPIO.setup(ECHO, GPIO.IN)
+
+# Vibration Sensor Pin (Analog to Digital via MCP3008 or ADC)
+VIBRATION_PIN = 18  # Example pin for digital output
+
+# GSM Module (Serial Communication)
+gsm = serial.Serial('/dev/ttyS0', baudrate=9600, timeout=1)
+
+# Thresholds
+vibration_threshold = 500  # Example value
+crack_threshold_mm = 5.0
+
+def measure_crack_width():
+    GPIO.output(TRIG, False)
+    time.sleep(0.5)
+
+    GPIO.output(TRIG, True)
+    time.sleep(0.00001)
+    GPIO.output(TRIG, False)
+
+    pulse_start, pulse_end = 0, 0
+
+    while GPIO.input(ECHO) == 0:
+        pulse_start = time.time()
+
+    while GPIO.input(ECHO) == 1:
+        pulse_end = time.time()
+
+    pulse_duration = pulse_end - pulse_start
+    distance_cm = pulse_duration * 17150
+    distance_mm = distance_cm * 10
+    return round(distance_mm, 2)
+
+def send_sms(message):
+    gsm.write(b'AT+CMGF=1\r')
+    time.sleep(1)
+    gsm.write(b'AT+CMGS="0740792264"\r')
+    time.sleep(1)
+    gsm.write(message.encode() + b"\r")
+    gsm.write(bytes([26]))  # CTRL+Z to send
+    time.sleep(3)
+
+def log_data(vibration, crack_width):
+    with open('crack_monitor_log.csv', 'a', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow([datetime.now(), vibration, crack_width])
+
+try:
+    print("Crack Monitoring Started...")
+    while True:
+        # Simulated vibration reading
+        vibration_value = GPIO.input(VIBRATION_PIN) * 600  # Placeholder simulation
+        
+        crack_width = measure_crack_width()
+        print(f"Vibration: {vibration_value} | Crack Width: {crack_width}mm")
+
+        log_data(vibration_value, crack_width)
+
+        if vibration_value > vibration_threshold:
+            send_sms("Warning: Excessive vibration detected!")
+
+        if crack_width > crack_threshold_mm:
+            send_sms(f"Alert: Crack width exceeded! Width: {crack_width}mm")
+
+        time.sleep(5)
+
+except KeyboardInterrupt:
+    print("Monitoring Stopped.")
+    GPIO.cleanup()
