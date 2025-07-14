@@ -1,0 +1,98 @@
+#include <LiquidCrystal.h>
+#include <DHT.h>
+#include <SoftwareSerial.h>
+
+// LCD pins
+const int rs = 12, en = 11, d4 = 5, d5 = 4, d6 = 3, d7 = 2;
+LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
+
+// DHT22 Sensor
+#define DHTPIN A0
+#define DHTTYPE DHT22
+DHT dht(DHTPIN, DHTTYPE);
+
+// Sound Sensor
+const int soundSensorPin = A1;
+int soundLevel = 0;
+const int soundThreshold = 55; // dB
+
+// Heating Element
+const int heatingElementPin = 6;
+
+// GSM Module SIM800L
+SoftwareSerial sim800(7, 8); // TX, RX
+
+// Phone number
+String phoneNumber = "0740792264";
+
+void setup() {
+  Serial.begin(9600);
+  sim800.begin(9600);
+  dht.begin();
+  lcd.begin(16, 2);
+  
+  pinMode(heatingElementPin, OUTPUT);
+  digitalWrite(heatingElementPin, LOW);
+
+  lcd.print("Beehive Monitor");
+  delay(2000);
+  lcd.clear();
+}
+
+void loop() {
+  float temperature = dht.readTemperature();
+  float humidity = dht.readHumidity();
+
+  soundLevel = analogRead(soundSensorPin);
+  int sounddB = map(soundLevel, 0, 1023, 0, 100); // approximate mapping
+
+  lcd.setCursor(0, 0);
+  lcd.print("T:");
+  lcd.print(temperature, 1);
+  lcd.print("C H:");
+  lcd.print(humidity, 0);
+  lcd.print("%");
+
+  lcd.setCursor(0, 1);
+  lcd.print("S:");
+  lcd.print(sounddB);
+  lcd.print("dB ");
+
+  // Heating element control
+  if (temperature < 32) {
+    digitalWrite(heatingElementPin, HIGH); // Turn ON
+    lcd.print("Heat ON ");
+  } else {
+    digitalWrite(heatingElementPin, LOW); // Turn OFF
+    lcd.print("Heat OFF");
+  }
+
+  // GSM alert
+  if (sounddB > soundThreshold) {
+    sendSMS(sounddB, temperature, humidity);
+    delay(10000); // avoid repeated SMS
+  }
+
+  delay(5000);
+}
+
+void sendSMS(int soundVal, float temp, float hum) {
+  sim800.println("AT+CMGF=1");
+  delay(1000);
+  sim800.println("AT+CMGS=\"" + phoneNumber + "\"");
+  delay(1000);
+
+  sim800.print("Beehive Alert!\n");
+  sim800.print("Sound: ");
+  sim800.print(soundVal);
+  sim800.println(" dB");
+  sim800.print("Temp: ");
+  sim800.print(temp, 1);
+  sim800.println(" C");
+  sim800.print("Humidity: ");
+  sim800.print(hum, 0);
+  sim800.println(" %");
+
+  sim800.write(26); // CTRL+Z
+  delay(5000);
+}
