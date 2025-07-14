@@ -1,0 +1,95 @@
+#include <DHT.h>
+#include <LiquidCrystal.h>
+#include <SoftwareSerial.h>
+
+// Define pins
+#define DHTPIN A0
+#define DHTTYPE DHT22
+#define LDR_PIN A1
+#define PIR_PIN 2
+#define FAN_PIN 3
+#define LIGHT_PIN 4
+#define BUZZER_PIN 5
+
+DHT dht(DHTPIN, DHTTYPE);
+LiquidCrystal lcd(12, 11, 10, 9, 8, 7);
+SoftwareSerial sim800(6, 13); // TX, RX
+
+// Thresholds
+const int tempThreshold = 30; // Degrees Celsius
+const int lightThreshold = 500; // Analog value
+
+bool motionDetected = false;
+
+void setup() {
+  Serial.begin(9600);
+  sim800.begin(9600);
+  dht.begin();
+  lcd.begin(16, 2);
+
+  pinMode(FAN_PIN, OUTPUT);
+  pinMode(LIGHT_PIN, OUTPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
+  pinMode(PIR_PIN, INPUT);
+
+  lcd.print("Smart Home Init");
+  delay(2000);
+  lcd.clear();
+}
+
+void loop() {
+  float temperature = dht.readTemperature();
+  float humidity = dht.readHumidity();
+  int lightLevel = analogRead(LDR_PIN);
+  int motion = digitalRead(PIR_PIN);
+
+  // Fan control
+  if (temperature > tempThreshold) {
+    digitalWrite(FAN_PIN, HIGH);
+  } else {
+    digitalWrite(FAN_PIN, LOW);
+  }
+
+  // Light control
+  if (lightLevel < lightThreshold) {
+    digitalWrite(LIGHT_PIN, HIGH);
+  } else {
+    digitalWrite(LIGHT_PIN, LOW);
+  }
+
+  // Motion detection and buzzer alert
+  if (motion == HIGH && !motionDetected) {
+    motionDetected = true;
+    digitalWrite(BUZZER_PIN, HIGH);
+    sendSMS();
+    delay(5000); // Wait before turning off buzzer
+    digitalWrite(BUZZER_PIN, LOW);
+  } else if (motion == LOW) {
+    motionDetected = false;
+  }
+
+  // Display info
+  lcd.setCursor(0,0);
+  lcd.print("T:");
+  lcd.print(temperature,1);
+  lcd.print("C H:");
+  lcd.print(humidity,0);
+  lcd.print("%");
+
+  lcd.setCursor(0,1);
+  lcd.print("Light:");
+  lcd.print(lightLevel);
+  lcd.print(motion ? " M:Yes" : " M:No ");
+
+  delay(3000);
+}
+
+void sendSMS() {
+  sim800.println("AT+CMGF=1");
+  delay(1000);
+  sim800.println("AT+CMGS=\"0740792264\"");
+  delay(1000);
+  sim800.println("Alert! Motion detected at home.");
+  sim800.write(26);
+  delay(5000);
+}
